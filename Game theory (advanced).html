@@ -1,0 +1,189 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="UTF-8">
+<title>Game Theory – Advanced Prisoner's Dilemma</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js"></script>
+<style>
+body { font-family: Tahoma; background:#eef2f5; padding:20px; }
+.container { background:#fff; padding:20px; border-radius:10px; max-width:1100px; margin:auto; }
+table { border-collapse:collapse; width:100%; margin-top:15px; }
+th,td { border:1px solid #333; padding:8px; text-align:center; }
+.nash { background:#ffe066; font-weight:bold; }
+.best { border:3px solid red; }
+.note { background:#f9f9f9; padding:10px; margin-top:10px; }
+</style>
+</head>
+<body>
+<div class="container" id="captureArea">
+
+<h2 align="center">Prisoner's Dilemma (Advanced Version)</h2>
+
+ผู้เล่น 1: <input id="player1" placeholder="ผู้เล่น 1"><br>
+ผู้เล่น 2: <input id="player2" placeholder="ผู้เล่น 2"><br><br>
+
+ระดับความสนิทของเพื่อน (0 = ไม่สนิท, 10 = เพื่อนรัก):  
+<input type="range" min="0" max="10" value="0" id="friendship" oninput="fsValue.innerText=this.value">
+<span id="fsValue">0</span>
+
+<hr>
+
+ผู้เล่น 1 เลือก:
+<select id="choice1">
+<option value="silent">เงียบ</option>
+<option value="confess">สารภาพ</option>
+<option value="frame">ใส่ความ</option>
+</select>
+
+ผู้เล่น 2 เลือก:
+<select id="choice2">
+<option value="silent">เงียบ</option>
+<option value="confess">สารภาพ</option>
+<option value="frame">ใส่ความ</option>
+</select>
+<br><br>
+
+<button onclick="analyze()">วิเคราะห์</button>
+<button onclick="savePNG()">Save PNG</button>
+<button onclick="location.reload()">Reset</button>
+
+<div id="matrix"></div>
+<div id="result"></div>
+<canvas id="chart"></canvas>
+
+</div>
+
+<script>
+let chart;
+
+// base payoff (ปีติดคุก)
+function getPayoff(friend){
+ return {
+  "silent_silent":[1-friend*0.05,1-friend*0.05],
+  "confess_silent":[0,10],
+  "silent_confess":[10,0],
+  "confess_confess":[5,5],
+  "frame_silent":[0,15],
+  "silent_frame":[15,0],
+  "frame_confess":[2,8],
+  "confess_frame":[8,2],
+  "frame_frame":[7,7]
+ };
+}
+
+const strategies=["silent","confess","frame"];
+
+function analyze(){
+ const p1=document.getElementById("player1").value||"ผู้เล่น1";
+ const p2=document.getElementById("player2").value||"ผู้เล่น2";
+ const c1=document.getElementById("choice1").value;
+ const c2=document.getElementById("choice2").value;
+ const f=parseInt(document.getElementById("friendship").value);
+
+ const payoff=getPayoff(f);
+
+ drawMatrix(p1,p2,payoff);
+ highlightBestResponses(payoff);
+ findNash(payoff);
+
+ const key=c1+"_"+c2;
+ const y1=payoff[key][0];
+ const y2=payoff[key][1];
+
+ document.getElementById("result").innerHTML=`
+<h3>ผลลัพธ์</h3>
+<table>
+<tr><th>ผู้เล่น</th><th>กลยุทธ์</th><th>โทษ(ปี)</th></tr>
+<tr><td>${p1}</td><td>${c1}</td><td>${y1.toFixed(2)}</td></tr>
+<tr><td>${p2}</td><td>${c2}</td><td>${y2.toFixed(2)}</td></tr>
+</table>
+<div class="note">
+<b>คำอธิบายเชิงทฤษฎี:</b><br>
+- Best Response = กลยุทธ์ที่ทำให้ตนเองติดคุกน้อยที่สุด เมื่ออีกฝ่ายเลือกคงที่<br>
+- Nash Equilibrium = ช่องที่ทั้งสองฝ่ายเป็น Best Response ต่อกัน<br>
+- ระดับความสนิทสูง → การ “เงียบ” ได้ประโยชน์มากขึ้น (ต้นทุนทางศีลธรรม/สังคม)
+</div>
+`;
+
+ drawChart(p1,p2,y1,y2);
+}
+
+function drawMatrix(p1,p2,p){
+ let html=`<h3>Payoff Matrix (3×3)</h3><table id="mt">
+ <tr><th></th><th>${p2}: เงียบ</th><th>${p2}: สารภาพ</th><th>${p2}: ใส่ความ</th></tr>`;
+ strategies.forEach(r=>{
+  html+=`<tr><th>${p1}: ${label(r)}</th>`;
+  strategies.forEach(c=>{
+   let v=p[r+"_"+c];
+   html+=`<td id="${r}_${c}">(${v[0].toFixed(2)},${v[1].toFixed(2)})</td>`;
+  });
+  html+=`</tr>`;
+ });
+ html+=`</table>`;
+ document.getElementById("matrix").innerHTML=html;
+}
+
+function label(x){
+ if(x=="silent") return "เงียบ";
+ if(x=="confess") return "สารภาพ";
+ return "ใส่ความ";
+}
+
+function highlightBestResponses(p){
+ // clear
+ document.querySelectorAll("td").forEach(td=>td.classList.remove("best","nash"));
+
+ // best response P1 (row player) for each column
+ strategies.forEach(col=>{
+  let best=null, min=Infinity;
+  strategies.forEach(row=>{
+   let v=p[row+"_"+col][0];
+   if(v<min){min=v;best=row;}
+  });
+  document.getElementById(best+"_"+col).classList.add("best");
+ });
+
+ // best response P2 (column player) for each row
+ strategies.forEach(row=>{
+  let best=null, min=Infinity;
+  strategies.forEach(col=>{
+   let v=p[row+"_"+col][1];
+   if(v<min){min=v;best=col;}
+  });
+  document.getElementById(row+"_"+best).classList.add("best");
+ });
+}
+
+function findNash(p){
+ strategies.forEach(r=>{
+  strategies.forEach(c=>{
+   let cell=document.getElementById(r+"_"+c);
+   if(cell.classList.contains("best")){
+    let count=cell.classList.length;
+    if(count>=2){cell.classList.add("nash");}
+   }
+  });
+ });
+}
+
+function drawChart(p1,p2,y1,y2){
+ if(chart) chart.destroy();
+ chart=new Chart(document.getElementById("chart"),{
+  type:"bar",
+  data:{labels:[p1,p2],datasets:[{label:"ปีติดคุก",data:[y1,y2]}]},
+  options:{scales:{y:{beginAtZero:true}}}
+ });
+}
+
+function savePNG(){
+ html2canvas(document.getElementById("captureArea")).then(c=>{
+  let a=document.createElement("a");
+  a.href=c.toDataURL();
+  a.download="game_theory_result.png";
+  a.click();
+ });
+}
+</script>
+</body>
+</html>
